@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ACUM Album to MusicBrainz</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #f0f0f0; }
+    input, button { font-size: 16px; margin: 10px 0; padding: 8px; }
+    .track, .medium-option { background: #fff; padding: 10px; margin: 10px 0; border-radius: 4px; border: 1px solid #ccc; }
+    .label { font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>ACUM Album → MusicBrainz Importer</h1>
+  <input type="url" id="albumUrl" placeholder="Paste ACUM album URL here...">
+  <button onclick="fetchAlbum()">Fetch Album Info</button>
+
+  <div id="albumInfo"></div>
+  <div id="mediums"></div>
+  <div id="formContainer"></div>
+
+  <script>
+    let albumData = null;
+
+    function getAlbumId(url) {
+      const m = url.match(/albumid=(\d+)/);
+      return m ? m[1] : null;
+    }
+
+    async function fetchAlbum() {
+      const url = document.getElementById('albumUrl').value;
+      const id = getAlbumId(url);
+      if (!id) return alert('Invalid URL');
+
+      const api = `https://nocs.acum.org.il/acumsitesearchdb/getalbuminfo?albumId=${id}`;
+      const res = await fetch(api);
+      const json = await res.json();
+      if (json.errorCode !== 0) return alert('Error: ' + json.errorDescription);
+
+      albumData = json.data.albumBean;
+      renderAlbum(albumData);
+    }
+
+    function renderAlbum(album) {
+      const debug = document.createElement('pre');
+      debug.textContent = JSON.stringify(album, null, 2);
+      document.body.appendChild(debug);
+      
+      const info = document.getElementById('albumInfo');
+      const mediums = document.getElementById('mediums');
+
+      info.innerHTML = `
+        <h2>${album.title}</h2>
+        <div><span class="label">Artist:</span> ${album.performer?.performerHebName || '—'}</div>
+        <div><span class="label">Tracks:</span> ${album.tracks.length}</div>
+      `;
+
+      mediums.innerHTML = '<h3>Import from Medium:</h3>' + album.versions.map((v, i) => `
+        <div class="medium-option">
+          <strong>${v.media} – ${v.catalog_id} (${v.release_date})</strong>
+          <form method="POST" action="https://musicbrainz.org/release/add" target="_blank" onsubmit="return generateForm(${i}, this)">
+            <button type="submit" style="margin-top: 10px; padding: 8px 16px; font-size: 16px; background-color: #4a90e2; color: white; border: none; border-radius: 5px; cursor: pointer;">📤 Import to MusicBrainz</button>
+          </form>
+        </div>
+      `).join('');
+    }
+
+    function durationMs(timeStr) {
+      const [m, s] = timeStr.split(':').map(Number);
+      return m * 60 * 1000 + s * 1000;
+    }
+
+    function generateForm(mediumIndex = 0, form = null) {
+      const album = albumData;
+      if (!form) {
+        form = document.createElement('form');
+        form.method = 'POST';
+        form.action = 'https://musicbrainz.org/release/add';
+        form.target = '_blank';
+      }
+      
+      form.innerHTML = '';
+      form.method = 'POST';
+      form.action = 'https://musicbrainz.org/release/add';
+      form.target = '_blank';
+
+      const add = (name, val) => {
+        const i = document.createElement('input');
+        i.type = 'hidden';
+        i.name = name;
+        i.value = val;
+        form.appendChild(i);
+      };
+
+      add('name', album.title);
+      add('type', 'album');
+      add('script', 'Hebr');
+      add('status', 'official');
+      add('artist_credit.names.0.name', album.performer?.performerHebName || '');
+      add('urls.0.url', document.getElementById('albumUrl').value);
+      // Leave link_type blank so it can be selected in the release editor
+      // add('urls.0.link_type', '301'); // Commented out - will be selectable in editor
+      add('edit_note', 'Imported from ACUM: ' + document.getElementById('albumUrl').value);
+
+      const v = album.versions[mediumIndex];
+      if (v.release_date) {
+        const [month, year] = v.release_date.split('/');
+        if (year) add(`events.0.date.year`, year);
+        if (month) add(`events.0.date.month`, month);
+      }
+      add(`events.0.country`, 'IL');
+      add(`labels.0.name`, v.publisherHebName || '');
+      add(`labels.0.catalog_number`, v.catalog_id);
+
+      const selectedMedium = v.media?.toUpperCase();
+      let format = 'CD';
+      if (selectedMedium === 'MC') format = 'Cassette';
+      else if (selectedMedium === 'LP') format = '12" Vinyl';
+      else if (selectedMedium === 'DVD') format = 'DVD';
+      else if (selectedMedium === 'DIGITAL') format = 'Digital Media';
+      add('mediums.0.format', format);
+
+      album.tracks.forEach((track, tIdx) => {
+        add(`mediums.0.track.${tIdx}.name`, track.workHebName);
+        add(`mediums.0.track.${tIdx}.length`, durationMs(track.time));
+        add(`mediums.0.track.${tIdx}.number`, track.albumTrackNumber);
+      });
+
+      return true; // Allow form submission
+    }
+  </script>
+</body>
+</html>

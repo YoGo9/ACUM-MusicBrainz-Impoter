@@ -4,10 +4,41 @@
   <meta charset="UTF-8">
   <title>ACUM Album to MusicBrainz</title>
   <style>
-    body { font-family: sans-serif; padding: 20px; background: #f0f0f0; }
-    input, button { font-size: 16px; margin: 10px 0; padding: 8px; }
-    .track, .medium-option { background: #fff; padding: 10px; margin: 10px 0; border-radius: 4px; border: 1px solid #ccc; }
-    .label { font-weight: bold; }
+    body {
+      font-family: sans-serif;
+      padding: 20px;
+      background: #f0f0f0;
+    }
+    input, button {
+      font-size: 16px;
+      margin: 10px 0;
+      padding: 8px;
+    }
+    .track, .medium-option {
+      background: #fff;
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+    }
+    .label {
+      font-weight: bold;
+    }
+    pre#jsonOutput {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 15px;
+      border-radius: 5px;
+      overflow: auto;
+      max-height: 400px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .string { color: #ce9178; }
+    .number { color: #b5cea8; }
+    .boolean { color: #569cd6; }
+    .null { color: #9cdcfe; }
+    .key { color: #dcdcaa; }
   </style>
 </head>
 <body>
@@ -17,7 +48,8 @@
 
   <div id="albumInfo"></div>
   <div id="mediums"></div>
-  <div id="formContainer"></div>
+  <h3>Raw JSON Data:</h3>
+  <pre id="jsonOutput"></pre>
 
   <script>
     let albumData = null;
@@ -42,10 +74,10 @@
     }
 
     function renderAlbum(album) {
-      const debug = document.createElement('pre');
-      debug.textContent = JSON.stringify(album, null, 2);
-      document.body.appendChild(debug);
-      
+      // Render JSON with syntax highlighting
+      const jsonContainer = document.getElementById('jsonOutput');
+      jsonContainer.innerHTML = syntaxHighlight(album);
+
       const info = document.getElementById('albumInfo');
       const mediums = document.getElementById('mediums');
 
@@ -78,7 +110,7 @@
         form.action = 'https://musicbrainz.org/release/add';
         form.target = '_blank';
       }
-      
+
       form.innerHTML = '';
       form.method = 'POST';
       form.action = 'https://musicbrainz.org/release/add';
@@ -98,8 +130,6 @@
       add('status', 'official');
       add('artist_credit.names.0.name', album.performer?.performerHebName || '');
       add('urls.0.url', document.getElementById('albumUrl').value);
-      // Leave link_type blank so it can be selected in the release editor
-      // add('urls.0.link_type', '301'); // Commented out - will be selectable in editor
       add('edit_note', 'Imported from ACUM: ' + document.getElementById('albumUrl').value);
 
       const v = album.versions[mediumIndex];
@@ -126,7 +156,29 @@
         add(`mediums.0.track.${tIdx}.number`, track.albumTrackNumber);
       });
 
-      return true; // Allow form submission
+      return true;
+    }
+
+    function syntaxHighlight(obj) {
+      if (typeof obj !== 'string') {
+        obj = JSON.stringify(obj, undefined, 2);
+      }
+      obj = obj.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      return obj.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|\b\d+\b)/g, function (match) {
+        let cls = 'number';
+        if (/^"/.test(match)) {
+          if (/:$/.test(match)) {
+            cls = 'key';
+          } else {
+            cls = 'string';
+          }
+        } else if (/true|false/.test(match)) {
+          cls = 'boolean';
+        } else if (/null/.test(match)) {
+          cls = 'null';
+        }
+        return `<span class="${cls}">${match}</span>`;
+      });
     }
   </script>
 </body>
